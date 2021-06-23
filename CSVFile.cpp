@@ -1,6 +1,6 @@
 #include "CSVFile.h"
 #include "FileStream.h"
-#include "utf8/checked.h"
+#include "checked.h"
 
 inline void  StringSplit(std::string& s, const char* delim, std::vector< std::string >& ret)
 {
