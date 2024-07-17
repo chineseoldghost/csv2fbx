@@ -1,4 +1,4 @@
-﻿// ConvertCSV2FBX.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
+// ConvertCSV2FBX.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
 //
 
 #include <iostream>
@@ -13,6 +13,7 @@ struct MeshVertex
 	float x, y, z;
 	float nx, ny, nz;
 	float tx, ty, tz,tw;
+	float cx, cy, cz, cw;
 };
 
 void ConvertCSV2FBX(const char* sourceCSVFile)
@@ -63,6 +64,11 @@ void ConvertCSV2FBX(const char* sourceCSVFile)
 
 			pSrcFile->GetCellValue("in_TEXCOORD0.x", iRow, mVerticsSet[iVertexID].u);
 			pSrcFile->GetCellValue("in_TEXCOORD0.y", iRow, mVerticsSet[iVertexID].v);
+
+			pSrcFile->GetCellValue("in_COLOR0.x", iRow, mVerticsSet[iVertexID].cx);
+			pSrcFile->GetCellValue("in_COLOR0.y", iRow, mVerticsSet[iVertexID].cy);
+			pSrcFile->GetCellValue("in_COLOR0.z", iRow, mVerticsSet[iVertexID].cz);
+			pSrcFile->GetCellValue("in_COLOR0.w", iRow, mVerticsSet[iVertexID].cw);
 		}
 	}
 	int iTotalVerticsCount = mVerticsSet.size();
@@ -82,12 +88,12 @@ void ConvertCSV2FBX(const char* sourceCSVFile)
 	FbxNode* subshapeNode = FbxNode::Create(rootNode, matName.c_str());
 	subshapeNode->AddMaterial(materialFbx);
 	//convert fbx mesh file 
-	int                          index;
 	FbxMesh* meshFbx = FbxMesh::Create(subshapeNode, subshapeNode->GetName());
 	FbxGeometryElementUV* meshUVs = meshFbx->CreateElementUV("UV");
 	FbxGeometryElementNormal* meshNormals = meshFbx->CreateElementNormal();
 	FbxGeometryElementTangent* meshTangents = meshFbx->CreateElementTangent();
 	FbxGeometryElementMaterial* meshMaterials = meshFbx->CreateElementMaterial();
+	FbxGeometryElementVertexColor* meshVertexColors = meshFbx->CreateElementVertexColor();
 
 	meshMaterials->SetMappingMode(FbxGeometryElement::eByPolygon);
 	meshMaterials->SetReferenceMode(FbxGeometryElement::eIndexToDirect);
@@ -98,49 +104,54 @@ void ConvertCSV2FBX(const char* sourceCSVFile)
 	meshUVs->SetReferenceMode(FbxGeometryElementUV::eDirect);
 	meshNormals->SetMappingMode(FbxGeometryElement::eByControlPoint);
 	meshNormals->SetReferenceMode(FbxGeometryElement::eDirect);
+	meshTangents->SetMappingMode(FbxGeometryElement::eByControlPoint);
+	meshTangents->SetReferenceMode(FbxGeometryElement::eDirect);
+	meshVertexColors->SetMappingMode(FbxGeometryElement::eByControlPoint);
+	meshVertexColors->SetReferenceMode(FbxGeometryElement::eDirect);
 
 	FbxVector4* meshVectors = meshFbx->GetControlPoints();
  
-	Matrix44 matRot;
-	MatrixRotationZ(&matRot, -FLT_DTOR(90));
-	for (index = 0; index < mVerticsSet.size(); index++)
+	int index = 0;
+	for (auto iter = mVerticsSet.begin(); iter != mVerticsSet.end(); ++iter)
 	{
-		Vector3 Vertex(mVerticsSet[index].x*100, mVerticsSet[index].y * 100, mVerticsSet[index].z * 100);
-		Vec3TransformCoord(&Vertex, &Vertex, &matRot);
+		Vector3 Vertex(iter->second.x*100, iter->second.y * 100, iter->second.z * 100);
 		meshVectors[index].Set(Vertex.x, Vertex.y, Vertex.z);
 		  
-		meshUVs->GetDirectArray().Add(FbxVector2(mVerticsSet[index].u,  mVerticsSet[index].v));
+		meshUVs->GetDirectArray().Add(FbxVector2(iter->second.u,  iter->second.v));
 
-		Vector3 VertexNormal(mVerticsSet[index].nx, mVerticsSet[index].ny, mVerticsSet[index].nz); 
-		Vec3TransformNormal(&VertexNormal, &VertexNormal, &matRot);
+		Vector3 VertexNormal(iter->second.nx, iter->second.ny, iter->second.nz); 
 
 		meshNormals->GetDirectArray().Add(FbxVector4(VertexNormal.x,
 			VertexNormal.y,
 			VertexNormal.z, 0));
 
-		Vector4 VertexTangent(mVerticsSet[index].tx, mVerticsSet[index].ty, mVerticsSet[index].tz, mVerticsSet[index].tw);
-		VertexTangent = VertexTangent*matRot;
+		Vector4 VertexTangent(iter->second.tx, iter->second.ty, iter->second.tz, iter->second.tw);
 
 		meshTangents->GetDirectArray().Add(FbxVector4(VertexTangent.x,
 			VertexTangent.y,
 			VertexTangent.z, VertexTangent.w));
- 
+
+		Vector4 VertexColor(iter->second.cx, iter->second.cy, iter->second.cz, iter->second.cw);
+		meshVertexColors->GetDirectArray().Add(FbxColor(VertexColor.x, VertexColor.y, VertexColor.z, VertexColor.w));
+		++index;
 	}
+	// Get first index.
+	int firstIndex = mVerticsSet.begin()->first;
 	int iFaceID = 0;
 	for (int iRow = 0; iRow < pSrcFile->GetRowNum(); iRow +=3)
 	{
 		meshFbx->BeginPolygon(0); 
 
 		pSrcFile->GetCellValue("IDX", iRow, iFaceID);
-		meshFbx->AddPolygon(iFaceID);
+		meshFbx->AddPolygon(iFaceID - firstIndex);
 		pSrcFile->GetCellValue("IDX", iRow + 1, iFaceID);
-		meshFbx->AddPolygon(iFaceID);
+		meshFbx->AddPolygon(iFaceID - firstIndex);
 		pSrcFile->GetCellValue("IDX", iRow + 2, iFaceID);
-		meshFbx->AddPolygon(iFaceID);
+		meshFbx->AddPolygon(iFaceID - firstIndex);
 		meshFbx->EndPolygon();
 	}
 
- 
+
 	subshapeNode->SetNodeAttribute(meshFbx);
 	subshapeNode->SetShadingMode(FbxNode::eTextureShading);
 
